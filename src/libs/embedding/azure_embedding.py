@@ -17,6 +17,13 @@ class AzureEmbeddingError(RuntimeError):
     """Raised when Azure OpenAI Embeddings API call fails."""
 
 
+def _optional_str(value: Any) -> Optional[str]:
+    """Return a stripped string value, ignoring unset mocks/objects."""
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
 class AzureEmbedding(BaseEmbedding):
     """Azure OpenAI Embedding provider implementation.
     
@@ -62,7 +69,7 @@ class AzureEmbedding(BaseEmbedding):
         # Azure uses 'deployment_name' instead of 'model'
         # Try settings.embedding.deployment_name first, fallback to model
         self.deployment_name = (
-            getattr(settings.embedding, 'deployment_name', None) or 
+            _optional_str(getattr(settings.embedding, 'deployment_name', None)) or
             settings.embedding.model
         )
         
@@ -71,8 +78,8 @@ class AzureEmbedding(BaseEmbedding):
         
         # API key: explicit parameter > settings.yaml > env var (fallback for backward compatibility)
         self.api_key = (
-            api_key or 
-            getattr(settings.embedding, 'api_key', None) or
+            api_key or
+            _optional_str(getattr(settings.embedding, 'api_key', None)) or
             os.environ.get("AZURE_OPENAI_API_KEY") or
             os.environ.get("OPENAI_API_KEY")
         )
@@ -85,8 +92,8 @@ class AzureEmbedding(BaseEmbedding):
         # Azure endpoint: explicit parameter > settings.yaml > env var (fallback)
         self.azure_endpoint = (
             azure_endpoint or
-            getattr(settings.embedding, 'azure_endpoint', None) or
-            os.environ.get("AZURE_OPENAI_ENDPOINT")
+            os.environ.get("AZURE_OPENAI_ENDPOINT") or
+            _optional_str(getattr(settings.embedding, 'azure_endpoint', None))
         )
         if not self.azure_endpoint:
             raise ValueError(
@@ -97,7 +104,7 @@ class AzureEmbedding(BaseEmbedding):
         # API version: explicit > settings > default
         self.api_version = (
             api_version or
-            getattr(settings.embedding, 'api_version', None) or
+            _optional_str(getattr(settings.embedding, 'api_version', None)) or
             self.DEFAULT_API_VERSION
         )
         

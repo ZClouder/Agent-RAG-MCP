@@ -17,8 +17,67 @@ import shutil
 import pytest
 from pathlib import Path
 
-from src.core.settings import load_settings
+from src.core.settings import Settings
 from src.ingestion.pipeline import IngestionPipeline, PipelineResult
+
+
+def _offline_settings(tmp_path: Path) -> Settings:
+    """Create a deterministic, network-free settings object for integration tests."""
+    return Settings.from_dict({
+        "llm": {
+            "provider": "openai",
+            "model": "gpt-4o",
+            "temperature": 0.0,
+            "max_tokens": 256,
+        },
+        "embedding": {
+            "provider": "deterministic",
+            "model": "deterministic-embedding",
+            "dimensions": 1536,
+        },
+        "vision_llm": {
+            "enabled": False,
+            "provider": "openai",
+            "model": "gpt-4o",
+            "max_image_size": 2048,
+        },
+        "vector_store": {
+            "provider": "chroma",
+            "persist_directory": str(tmp_path / "chroma"),
+            "collection_name": "knowledge_hub",
+        },
+        "retrieval": {
+            "dense_top_k": 20,
+            "sparse_top_k": 20,
+            "fusion_top_k": 10,
+            "rrf_k": 60,
+        },
+        "rerank": {
+            "enabled": False,
+            "provider": "none",
+            "model": "none",
+            "top_k": 5,
+        },
+        "evaluation": {
+            "enabled": False,
+            "provider": "custom",
+            "metrics": ["hit_rate", "mrr", "faithfulness"],
+        },
+        "observability": {
+            "log_level": "INFO",
+            "trace_enabled": True,
+            "trace_file": str(tmp_path / "traces.jsonl"),
+            "structured_logging": True,
+        },
+        "ingestion": {
+            "chunk_size": 1000,
+            "chunk_overlap": 200,
+            "splitter": "recursive",
+            "batch_size": 8,
+            "chunk_refiner": {"use_llm": False},
+            "metadata_enricher": {"use_llm": False},
+        },
+    })
 
 
 class TestIngestionPipeline:
@@ -33,9 +92,9 @@ class TestIngestionPipeline:
         # Cleanup handled by pytest's tmp_path
     
     @pytest.fixture
-    def settings(self):
-        """Load settings from config file."""
-        return load_settings("config/settings.yaml")
+    def settings(self, tmp_path):
+        """Load an offline integration-test configuration."""
+        return _offline_settings(tmp_path)
     
     @pytest.fixture
     def complex_pdf_path(self):
@@ -136,7 +195,7 @@ class TestIngestionPipeline:
             assert "encoding" in stages
             encoding = stages["encoding"]
             assert encoding["dense_vector_count"] == result.chunk_count
-            assert encoding["dense_dimension"] == 1536, "Azure ada-002 should produce 1536-dim vectors"
+            assert encoding["dense_dimension"] == 1536
             print(f"[OK] Dense vectors: {encoding['dense_vector_count']} x {encoding['dense_dimension']}dim")
             
             # Storage stage
@@ -217,65 +276,56 @@ class TestPipelineComponents:
     """Test individual pipeline components in isolation."""
     
     @pytest.fixture
-    def settings(self):
-        """Load settings from config file."""
-        return load_settings("config/settings.yaml")
+    def settings(self, tmp_path):
+        """Load the same offline settings used by pipeline integration tests."""
+        return _offline_settings(tmp_path)
     
     def test_settings_loads_correctly(self, settings):
         """Verify settings are loaded with expected values."""
         # LLM settings
-        assert settings.llm.provider == "azure"
+        assert settings.llm.provider == "openai"
         assert settings.llm.model == "gpt-4o"
         print(f"[OK] LLM: {settings.llm.provider}/{settings.llm.model}")
-        
+
         # Embedding settings
-        assert settings.embedding.provider == "azure"
-        assert settings.embedding.model == "text-embedding-ada-002"
+        assert settings.embedding.provider == "deterministic"
+        assert settings.embedding.model == "deterministic-embedding"
         assert settings.embedding.dimensions == 1536
         print(f"[OK] Embedding: {settings.embedding.provider}/{settings.embedding.model}")
-        
+
         # Vision LLM settings
         assert settings.vision_llm is not None
-        assert settings.vision_llm.enabled == True
-        assert settings.vision_llm.provider == "azure"
+        assert settings.vision_llm.enabled == False
+        assert settings.vision_llm.provider == "openai"
         print(f"[OK] Vision LLM: {settings.vision_llm.provider}/{settings.vision_llm.model}")
         
         # Ingestion settings
         assert settings.ingestion is not None
         assert settings.ingestion.chunk_refiner is not None
-        assert settings.ingestion.chunk_refiner.get("use_llm") == True
+        assert settings.ingestion.chunk_refiner.get("use_llm") == False
         assert settings.ingestion.metadata_enricher is not None
-        assert settings.ingestion.metadata_enricher.get("use_llm") == True
-        print("[OK] Ingestion LLM enhancement: enabled")
+        assert settings.ingestion.metadata_enricher.get("use_llm") == False
+        print("[OK] Ingestion LLM enhancement: disabled for offline tests")
     
     def test_embedding_creates_vectors(self, settings):
-        """Test that Azure embedding service works."""
+        """Test that deterministic embedding service works offline."""
         from src.libs.embedding.embedding_factory import EmbeddingFactory
         
         embedding = EmbeddingFactory.create(settings)
-        
+
         texts = ["Hello world", "Testing embedding"]
         vectors = embedding.embed(texts)
         
         assert len(vectors) == 2
-        assert len(vectors[0]) == 1536  # ada-002 dimension
+        assert len(vectors[0]) == 1536
+        assert vectors == embedding.embed(texts)
         print(f"[OK] Embedding test: produced {len(vectors)} vectors of dim {len(vectors[0])}")
-    
-    def test_llm_responds(self, settings):
-        """Test that Azure LLM service works."""
-        from src.libs.llm.llm_factory import LLMFactory
-        from src.libs.llm.base_llm import Message
-        
-        llm = LLMFactory.create(settings)
-        
-        messages = [
-            Message(role="user", content="Say 'Hello' and nothing else.")
-        ]
-        response = llm.chat(messages)
-        
-        assert response is not None
-        assert len(response.content) > 0
-        print(f"[OK] LLM test: received response: {response.content[:50]}...")
+
+    def test_llm_enhancement_disabled_for_offline_tests(self, settings):
+        """Offline pipeline tests must not depend on external LLM services."""
+        assert settings.ingestion.chunk_refiner.get("use_llm") is False
+        assert settings.ingestion.metadata_enricher.get("use_llm") is False
+        assert settings.vision_llm.enabled is False
 
 
 if __name__ == "__main__":

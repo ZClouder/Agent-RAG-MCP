@@ -18,6 +18,32 @@ from src.libs.reranker.llm_reranker import LLMReranker
 from src.libs.reranker.reranker_factory import RerankerFactory
 
 
+def _llm_reranker_configured() -> bool:
+    try:
+        settings = load_settings("config/settings.yaml")
+    except Exception:
+        return False
+
+    api_key = settings.llm.api_key or ""
+    endpoint = settings.llm.azure_endpoint or ""
+    has_openai_key = settings.llm.provider == "openai" and bool(api_key) and "YOUR_API_KEY" not in api_key
+    has_azure_key = (
+        settings.llm.provider == "azure"
+        and bool(api_key)
+        and bool(endpoint)
+        and "YOUR_API_KEY" not in api_key
+        and "YOUR_ENDPOINT" not in endpoint
+    )
+
+    return settings.rerank.enabled is True and settings.rerank.provider == "llm" and (has_openai_key or has_azure_key)
+
+
+pytestmark = pytest.mark.skipif(
+    not _llm_reranker_configured(),
+    reason="LLM reranker integration tests require rerank.provider=llm and real LLM credentials",
+)
+
+
 # =============================================================================
 # Test Data
 # =============================================================================

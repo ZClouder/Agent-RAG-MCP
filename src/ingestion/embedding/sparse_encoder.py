@@ -146,18 +146,18 @@ class SparseEncoder:
         """
         tokens: List[str] = []
 
-        # Use jieba to segment the text (handles both Chinese and English)
-        raw_tokens = jieba.lcut(text)
+        token_pattern = re.compile(
+            r"[A-Za-z0-9_]+(?:[-.][A-Za-z0-9_]+)*|[\u4e00-\u9fff]+",
+            re.UNICODE,
+        )
 
-        # Clean tokens: keep only alphanumeric and Chinese characters
-        for token in raw_tokens:
-            token = token.strip()
-            if not token:
-                continue
-            # Skip pure punctuation / whitespace
-            if re.fullmatch(r'[\s\W]+', token, re.UNICODE):
-                continue
-            tokens.append(token)
+        for match in token_pattern.finditer(text):
+            token = match.group(0).strip()
+            if token:
+                if re.fullmatch(r"[\u4e00-\u9fff]+", token):
+                    tokens.extend(part for part in jieba.lcut(token) if part.strip())
+                else:
+                    tokens.append(token)
         
         # Apply lowercase if configured
         if self.lowercase:

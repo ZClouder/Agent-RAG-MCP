@@ -129,13 +129,17 @@ class ChunkRefiner(BaseTransform):
                 refined_text = rule_refined_text
                 refined_by = "rule"
             
+            metadata = {
+                **(chunk.metadata or {}),
+                'refined_by': refined_by
+            }
+            if self.use_llm and refined_by == "rule":
+                metadata['refine_fallback_reason'] = "llm_failed"
+
             refined_chunk = Chunk(
                 id=chunk.id,
                 text=refined_text,
-                metadata={
-                    **(chunk.metadata or {}),
-                    'refined_by': refined_by
-                },
+                metadata=metadata,
                 source_ref=chunk.source_ref
             )
             return (refined_chunk, refined_by, None)
@@ -229,8 +233,10 @@ class ChunkRefiner(BaseTransform):
                         refined_text = rule_refined_text
                         refined_by = "rule"
                         fallback_count += 1
-                        if chunk.metadata:
-                            chunk.metadata['refine_fallback_reason'] = "llm_failed"
+                        chunk.metadata = {
+                            **(chunk.metadata or {}),
+                            'refine_fallback_reason': "llm_failed",
+                        }
                 else:
                     # LLM disabled, use rule-based
                     refined_text = rule_refined_text

@@ -18,6 +18,29 @@ from src.core.settings import load_settings
 from src.libs.embedding.embedding_factory import EmbeddingFactory
 
 
+def _azure_embedding_configured() -> bool:
+    try:
+        settings = load_settings("config/settings.yaml")
+    except Exception:
+        return False
+
+    endpoint = settings.embedding.azure_endpoint or ""
+    api_key = settings.embedding.api_key or ""
+    return (
+        settings.embedding.provider == "azure"
+        and bool(endpoint)
+        and bool(api_key)
+        and "YOUR_ENDPOINT" not in endpoint
+        and "YOUR_API_KEY" not in api_key
+    )
+
+
+pytestmark = pytest.mark.skipif(
+    not _azure_embedding_configured(),
+    reason="Azure embedding integration tests require real Azure config in config/settings.yaml",
+)
+
+
 @pytest.fixture(scope="module")
 def settings():
     """Load settings from config file."""

@@ -130,6 +130,12 @@ def _register_builtin_providers() -> None:
     except ImportError:
         pass  # Ollama provider not available
 
+    try:
+        from src.libs.embedding.deterministic_embedding import DeterministicEmbedding
+        EmbeddingFactory.register_provider("deterministic", DeterministicEmbedding)
+    except ImportError:
+        pass  # Deterministic provider not available
+
 
 # Register providers when module is imported
 _register_builtin_providers()

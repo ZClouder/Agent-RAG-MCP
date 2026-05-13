@@ -121,12 +121,12 @@ class PdfLoader(BaseLoader):
         
         # Handle image extraction (with graceful degradation)
         if self.extract_images:
+            metadata["images"] = []
             try:
                 text_content, images_metadata = self._extract_and_process_images(
                     path, text_content, doc_hash
                 )
-                if images_metadata:
-                    metadata["images"] = images_metadata
+                metadata["images"] = images_metadata
             except Exception as e:
                 logger.warning(
                     f"Image extraction failed for {path}, continuing with text-only: {e}"

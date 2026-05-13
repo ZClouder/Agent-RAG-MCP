@@ -64,6 +64,76 @@ class TestDataIngestion:
         if not pdf_path.exists():
             pytest.skip("Complex PDF not found")
         return pdf_path
+
+    @pytest.fixture
+    def offline_config(self, tmp_path):
+        """Create a deterministic ingestion config for subprocess E2E tests."""
+        config_path = tmp_path / "offline_settings.yaml"
+        chroma_dir = (tmp_path / "chroma").as_posix()
+        trace_file = (tmp_path / "traces.jsonl").as_posix()
+        config_path.write_text(
+            f"""
+llm:
+  provider: "openai"
+  model: "gpt-4o"
+  temperature: 0.0
+  max_tokens: 256
+
+embedding:
+  provider: "deterministic"
+  model: "deterministic-embedding"
+  dimensions: 1536
+
+vision_llm:
+  enabled: false
+  provider: "openai"
+  model: "gpt-4o"
+  max_image_size: 2048
+
+vector_store:
+  provider: "chroma"
+  persist_directory: "{chroma_dir}"
+  collection_name: "knowledge_hub"
+
+retrieval:
+  dense_top_k: 20
+  sparse_top_k: 20
+  fusion_top_k: 10
+  rrf_k: 60
+
+rerank:
+  enabled: false
+  provider: "none"
+  model: "none"
+  top_k: 5
+
+evaluation:
+  enabled: false
+  provider: "custom"
+  metrics:
+    - "hit_rate"
+    - "mrr"
+    - "faithfulness"
+
+observability:
+  log_level: "INFO"
+  trace_enabled: true
+  trace_file: "{trace_file}"
+  structured_logging: true
+
+ingestion:
+  chunk_size: 1000
+  chunk_overlap: 200
+  splitter: "recursive"
+  batch_size: 8
+  chunk_refiner:
+    use_llm: false
+  metadata_enricher:
+    use_llm: false
+""".strip(),
+            encoding="utf-8",
+        )
+        return config_path
     
     def run_ingest_script(
         self,
@@ -179,7 +249,7 @@ class TestDataIngestion:
         assert "Unsupported" in result.stdout or "unsupported" in result.stdout.lower()
     
     @pytest.mark.integration
-    def test_ingest_simple_pdf(self, sample_pdf):
+    def test_ingest_simple_pdf(self, sample_pdf, offline_config):
         """Test ingesting a simple PDF file.
         
         This test requires Azure API credentials to be configured.
@@ -188,6 +258,7 @@ class TestDataIngestion:
             path=str(sample_pdf),
             collection="e2e_test_simple",
             force=True,  # Force to ensure fresh processing
+            config=str(offline_config),
             verbose=True
         )
         
@@ -200,7 +271,7 @@ class TestDataIngestion:
         assert "SUMMARY" in result.stdout
     
     @pytest.mark.integration
-    def test_ingest_complex_pdf_with_images(self, complex_pdf):
+    def test_ingest_complex_pdf_with_images(self, complex_pdf, offline_config):
         """Test ingesting a complex PDF with images.
         
         This test requires Azure API credentials and Vision LLM to be configured.
@@ -210,6 +281,7 @@ class TestDataIngestion:
             path=str(complex_pdf),
             collection="e2e_test_complex",
             force=True,
+            config=str(offline_config),
             verbose=True
         )
         
@@ -226,7 +298,7 @@ class TestDataIngestion:
             assert "chunks" in result.stdout.lower()
     
     @pytest.mark.integration
-    def test_ingest_skip_already_processed(self, sample_pdf):
+    def test_ingest_skip_already_processed(self, sample_pdf, offline_config):
         """Test that already processed files are skipped.
         
         Runs ingestion twice and verifies second run skips the file.
@@ -235,7 +307,8 @@ class TestDataIngestion:
         result1 = self.run_ingest_script(
             path=str(sample_pdf),
             collection="e2e_test_skip",
-            force=True  # Ensure fresh start
+            force=True,  # Ensure fresh start
+            config=str(offline_config)
         )
         
         print("First run STDOUT:", result1.stdout)
@@ -248,7 +321,8 @@ class TestDataIngestion:
         result2 = self.run_ingest_script(
             path=str(sample_pdf),
             collection="e2e_test_skip",
-            force=False  # Don't force, should skip
+            force=False,  # Don't force, should skip
+            config=str(offline_config)
         )
         
         print("Second run STDOUT:", result2.stdout)
@@ -258,13 +332,14 @@ class TestDataIngestion:
         assert "skip" in result2.stdout.lower() or "already processed" in result2.stdout.lower()
     
     @pytest.mark.integration
-    def test_ingest_force_reprocess(self, sample_pdf):
+    def test_ingest_force_reprocess(self, sample_pdf, offline_config):
         """Test that --force flag causes re-processing."""
         # First run
         result1 = self.run_ingest_script(
             path=str(sample_pdf),
             collection="e2e_test_force",
-            force=True
+            force=True,
+            config=str(offline_config)
         )
         
         # Skip test if first run failed
@@ -276,6 +351,7 @@ class TestDataIngestion:
             path=str(sample_pdf),
             collection="e2e_test_force",
             force=True,
+            config=str(offline_config),
             verbose=True
         )
         
@@ -288,7 +364,7 @@ class TestDataIngestion:
             assert "chunks" in result2.stdout.lower() or "processed" in result2.stdout.lower()
     
     @pytest.mark.integration
-    def test_ingest_directory(self, tmp_path, sample_pdf):
+    def test_ingest_directory(self, tmp_path, sample_pdf, offline_config):
         """Test ingesting all PDFs in a directory."""
         # Create a directory with multiple PDFs (copy sample)
         test_dir = tmp_path / "pdfs"
@@ -301,6 +377,7 @@ class TestDataIngestion:
             path=str(test_dir),
             collection="e2e_test_dir",
             force=True,
+            config=str(offline_config),
             verbose=True
         )
         
@@ -338,19 +415,76 @@ class TestIngestScriptIntegration:
         sample_pdf = PROJECT_ROOT / "tests" / "fixtures" / "sample_documents" / "simple.pdf"
         if not sample_pdf.exists():
             pytest.skip("Sample PDF not found")
-        
+
+        config_path = tmp_path / "offline_settings.yaml"
+        config_path.write_text(
+            f"""
+llm:
+  provider: "openai"
+  model: "gpt-4o"
+  temperature: 0.0
+  max_tokens: 256
+embedding:
+  provider: "deterministic"
+  model: "deterministic-embedding"
+  dimensions: 1536
+vision_llm:
+  enabled: false
+  provider: "openai"
+  model: "gpt-4o"
+  max_image_size: 2048
+vector_store:
+  provider: "chroma"
+  persist_directory: "{(tmp_path / "chroma").as_posix()}"
+  collection_name: "knowledge_hub"
+retrieval:
+  dense_top_k: 20
+  sparse_top_k: 20
+  fusion_top_k: 10
+  rrf_k: 60
+rerank:
+  enabled: false
+  provider: "none"
+  model: "none"
+  top_k: 5
+evaluation:
+  enabled: false
+  provider: "custom"
+  metrics: ["hit_rate", "mrr", "faithfulness"]
+observability:
+  log_level: "INFO"
+  trace_enabled: true
+  trace_file: "{(tmp_path / "traces.jsonl").as_posix()}"
+  structured_logging: true
+ingestion:
+  chunk_size: 1000
+  chunk_overlap: 200
+  splitter: "recursive"
+  batch_size: 8
+  chunk_refiner:
+    use_llm: false
+  metadata_enricher:
+    use_llm: false
+""".strip(),
+            encoding="utf-8",
+        )
+
         result = subprocess.run(
             [
                 sys.executable,
                 str(PROJECT_ROOT / "scripts" / "ingest.py"),
                 "--path", str(sample_pdf),
                 "--collection", "e2e_test_persistence",
-                "--force"
+                "--force",
+                "--config", str(config_path)
             ],
             capture_output=True,
             text=True,
             cwd=str(PROJECT_ROOT),
-            timeout=300
+            timeout=300,
+            env={**os.environ.copy(), "PYTHONUTF8": "1"},
+            encoding="utf-8",
+            errors="replace",
         )
         
         print("STDOUT:", result.stdout)

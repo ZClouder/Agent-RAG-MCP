@@ -497,6 +497,7 @@ class IngestionPipeline:
                     for img in images
                 ]
                 trace.record_stage("upsert", {
+                    "method": "vector+bm25+image_storage",
                     "dense_store": {
                         "backend": "ChromaDB",
                         "collection": self.collection,

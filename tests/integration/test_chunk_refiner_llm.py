@@ -164,8 +164,8 @@ def is_provider_available(provider: str) -> tuple[bool, str]:
         return os.getenv(env_var) is not None, env_var
         
     elif provider == 'ollama':
-        # Ollama assumed available if base_url is set or default
-        return True, 'OLLAMA_BASE_URL'
+        env_var = 'OLLAMA_BASE_URL'
+        return os.getenv(env_var) is not None, env_var
         
     return False, ''
 
