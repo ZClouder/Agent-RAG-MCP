@@ -168,7 +168,7 @@ class TestMCPClientE2E:
 
     @pytest.mark.e2e
     def test_initialize_and_tools_list(self, mcp_server: subprocess.Popen) -> None:
-        """Server responds to initialize and tools/list with all 3 registered tools."""
+        """Server responds to initialize and tools/list with registered tools."""
         messages = [
             INIT_REQUEST,
             INITIALIZED_NOTIFICATION,
@@ -198,6 +198,7 @@ class TestMCPClientE2E:
         assert isinstance(tools, list)
 
         tool_names = {t["name"] for t in tools}
+        assert "agent_answer" in tool_names
         assert "query_knowledge_hub" in tool_names
         assert "list_collections" in tool_names
         assert "get_document_summary" in tool_names
@@ -387,6 +388,39 @@ class TestMCPClientE2E:
     # ------------------------------------------------------------------
 
     @pytest.mark.e2e
+    def test_tools_call_agent_answer_missing_required_input(
+        self, mcp_server: subprocess.Popen
+    ) -> None:
+        """agent_answer is callable and fails fast before RAG when args are invalid."""
+        messages = [
+            INIT_REQUEST,
+            INITIALIZED_NOTIFICATION,
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "agent_answer",
+                    "arguments": {
+                        "query": "What is RAG?",
+                        "user_id": "u1",
+                        "session_id": "s1",
+                        "top_k": 3,
+                    },
+                },
+            },
+        ]
+
+        responses = _send_jsonrpc(mcp_server, messages, expected_responses=2, timeout=15.0)
+
+        call_resp = _find(responses, 2)
+        assert call_resp is not None, f"Missing tools/call response. Got: {responses}"
+        assert "result" in call_resp
+        result = call_resp["result"]
+        assert result.get("isError") is True
+        assert "'collection' is a required property" in result["content"][0].get("text", "")
+
+    @pytest.mark.e2e
     def test_full_session_query_with_citations_format(
         self, mcp_server: subprocess.Popen
     ) -> None:
@@ -474,24 +508,29 @@ class TestMCPClientE2E:
         messages = [
             INIT_REQUEST,
             INITIALIZED_NOTIFICATION,
-            # Call 1: list_collections
+            # Call 1: agent_answer schema validation (lightweight fail-fast)
             {
                 "jsonrpc": "2.0",
                 "id": 2,
                 "method": "tools/call",
                 "params": {
-                    "name": "list_collections",
-                    "arguments": {"include_stats": False},
+                    "name": "agent_answer",
+                    "arguments": {
+                        "query": "test query",
+                        "user_id": "u1",
+                        "session_id": "s1",
+                        "top_k": 2,
+                    },
                 },
             },
-            # Call 2: query_knowledge_hub
+            # Call 2: unknown tool should return a protocol-level tool error
             {
                 "jsonrpc": "2.0",
                 "id": 3,
                 "method": "tools/call",
                 "params": {
-                    "name": "query_knowledge_hub",
-                    "arguments": {"query": "test query", "top_k": 2},
+                    "name": "nonexistent_tool",
+                    "arguments": {},
                 },
             },
             # Call 3: get_document_summary (expect graceful error)

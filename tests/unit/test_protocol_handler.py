@@ -417,6 +417,7 @@ class TestCreateMCPServer:
         assert isinstance(handler, ProtocolHandler)
         assert handler.server_name == "test-server"
         assert handler.server_version == "1.0.0"
+        assert "agent_answer" in handler.tools
 
     def test_uses_provided_protocol_handler(
         self, sample_tool_schema: Dict[str, Any]

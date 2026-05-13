@@ -20,7 +20,7 @@ def traces_file(tmp_path: Path) -> Path:
             "started_at": "2025-01-01T00:00:00",
             "elapsed_ms": 100.0,
             "stages": [
-                {"stage": "load", "elapsed_ms": 20.0, "method": "pdf"},
+                {"stage": "load", "elapsed_ms": 20.0, "data": {"method": "pdf"}},
                 {"stage": "split", "elapsed_ms": 30.0},
                 {"stage": "embed", "elapsed_ms": 50.0},
             ],
@@ -45,6 +45,25 @@ def traces_file(tmp_path: Path) -> Path:
             "stages": [],
             "metadata": {},
         },
+        {
+            "trace_id": "t4",
+            "trace_type": "agent",
+            "started_at": "2025-01-04T00:00:00",
+            "elapsed_ms": 75.0,
+            "stages": [
+                {
+                    "stage": "agent_start",
+                    "elapsed_ms": 5.0,
+                    "data": {"success": True, "output_count": 1},
+                },
+                {
+                    "stage": "tool_call",
+                    "elapsed_ms": 50.0,
+                    "data": {"success": True, "tool_name": "query_knowledge_hub"},
+                },
+            ],
+            "metadata": {"session_id": "s1"},
+        },
     ]
     with p.open("w", encoding="utf-8") as f:
         for t in traces:
@@ -57,9 +76,9 @@ class TestTraceService:
     def test_list_all(self, traces_file):
         svc = TraceService(traces_file)
         result = svc.list_traces()
-        assert len(result) == 3
+        assert len(result) == 4
         # Newest first
-        assert result[0]["trace_id"] == "t3"
+        assert result[0]["trace_id"] == "t4"
 
     def test_list_by_type(self, traces_file):
         svc = TraceService(traces_file)
@@ -72,6 +91,20 @@ class TestTraceService:
         q = svc.list_traces(trace_type="query")
         assert len(q) == 1
         assert q[0]["trace_id"] == "t2"
+
+    def test_list_by_type_agent(self, traces_file):
+        svc = TraceService(traces_file)
+        agent = svc.list_traces(trace_type="agent")
+        assert len(agent) == 1
+        assert agent[0]["trace_id"] == "t4"
+        assert agent[0]["metadata"]["session_id"] == "s1"
+
+    def test_get_stage_timings_for_agent_trace(self, traces_file):
+        svc = TraceService(traces_file)
+        t = svc.get_trace("t4")
+        timings = svc.get_stage_timings(t)
+        assert [item["stage_name"] for item in timings] == ["agent_start", "tool_call"]
+        assert timings[1]["data"]["tool_name"] == "query_knowledge_hub"
 
     def test_list_with_limit(self, traces_file):
         svc = TraceService(traces_file)

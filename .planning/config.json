@@ -1,0 +1,9 @@
+{
+  "workflow": "gsd-sdd",
+  "mode": "execution",
+  "project": "Agent-RAG-MCP",
+  "quality_bar": "fail-fast",
+  "primary_goal": "Build a runnable, observable, testable Agent-RAG-Memory MCP loop",
+  "base_repo": "MODULAR-RAG-MCP-SERVER",
+  "remote": "https://github.com/ZClouder/Agent-RAG-MCP.git"
+}

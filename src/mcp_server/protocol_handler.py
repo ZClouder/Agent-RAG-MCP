@@ -207,6 +207,10 @@ def _register_default_tools(protocol_handler: ProtocolHandler) -> None:
     from src.mcp_server.tools.get_document_summary import register_tool as register_summary_tool
     register_summary_tool(protocol_handler)
 
+    # Import and register agent_answer tool
+    from src.mcp_server.tools.agent_answer import register_tool as register_agent_answer_tool
+    register_agent_answer_tool(protocol_handler)
+
 
 def create_mcp_server(
     server_name: str,
@@ -229,14 +233,17 @@ def create_mcp_server(
     Returns:
         Configured Server instance ready to run.
     """
+    handler_was_provided = protocol_handler is not None
     if protocol_handler is None:
         protocol_handler = ProtocolHandler(
             server_name=server_name,
             server_version=server_version,
         )
 
-    # Register default tools if requested
-    if register_tools:
+    # Register default tools only for the server-owned handler. A caller-provided
+    # handler is treated as fully configured so tests and custom hosts are not
+    # polluted by implicit default tools.
+    if register_tools and not handler_was_provided:
         _register_default_tools(protocol_handler)
 
     # Create low-level server

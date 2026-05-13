@@ -24,7 +24,7 @@ class TraceContext:
         metadata: Arbitrary key/value pairs attached to the trace.
     """
 
-    trace_type: Literal["query", "ingestion"] = "query"
+    trace_type: Literal["query", "ingestion", "agent", "evaluation"] = "query"
     trace_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     finished_at: Optional[str] = field(default=None)

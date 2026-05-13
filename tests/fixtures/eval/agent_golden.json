@@ -1,0 +1,30 @@
+{
+  "thresholds": {
+    "tool_success_rate": 1.0,
+    "citation_presence_rate": 1.0,
+    "answer_contains_rate": 1.0,
+    "memory_write_success_rate": 1.0,
+    "trace_completeness_rate": 1.0
+  },
+  "test_cases": [
+    {
+      "id": "agent-memory-citation-001",
+      "query": "When should the agent write a durable memory after answering a RAG question?",
+      "expected_answer_contains": [
+        "memory",
+        "citation",
+        "trace"
+      ],
+      "expected_tools": [
+        "query_knowledge_hub"
+      ],
+      "expected_memory_writes": 1,
+      "required_trace_fields": [
+        "trace_id",
+        "stages.agent_start",
+        "stages.tool_call",
+        "stages.memory_write"
+      ]
+    }
+  ]
+}
