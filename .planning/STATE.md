@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Phase 5 - Quality Gate And Remote Readiness.
+Phase 5 - Quality Gate And Remote Readiness - completed.
 
 ## Worktree
 
@@ -32,9 +32,9 @@ ValueError: Tool 'query_knowledge_hub' is already registered
 
 ## Next Actions
 
-1. Run any additional full-suite checks if needed.
-2. Review changed files.
-3. Push `feature/agent-rag-memory-sdd` to `origin` when ready.
+1. Open and review the GitHub PR.
+2. Decide whether v2 should add multi-agent planning, semantic memory, or dashboard trace UI.
+3. Merge `feature/agent-rag-memory-sdd` after review if no additional v1 changes are needed.
 
 ## Completed
 
@@ -45,6 +45,9 @@ ValueError: Tool 'query_knowledge_hub' is already registered
 - Added SQLite-backed episodic memory in `src/memory`.
 - Added deterministic agent evaluation runner.
 - Added committed golden fixture under `tests/fixtures/eval`.
+- Added deterministic local embedding provider for offline CI and E2E ingestion tests.
+- Stabilized full pytest on Windows by isolating external-provider integration tests behind explicit real-credential checks.
+- Pushed branch `feature/agent-rag-memory-sdd` to `origin`.
 - Verified:
 
 ```text
@@ -65,6 +68,12 @@ passed
 
 python -m pytest tests/unit/test_agent_answer_tool.py tests/unit/test_agent_orchestrator.py tests/unit/test_memory_manager.py tests/unit/test_agent_eval_runner.py tests/unit/test_protocol_handler.py tests/unit/test_trace_service.py tests/unit/test_custom_evaluator.py tests/unit/test_fusion_rrf.py tests/e2e/test_mcp_client.py -q
 124 passed
+
+python -m compileall src -q
+passed
+
+python -m pytest -q --tb=short
+1368 passed, 32 skipped
 ```
 
 ## Full Pytest Status
@@ -75,14 +84,25 @@ Attempted:
 python -m pytest -q
 ```
 
-Result: failed outside the Agent-RAG-Memory targeted gate.
+Result: passed after quality-hardening fixes.
 
-Observed failure classes:
+Final result:
 
-- Chroma integration teardown errors on Windows temp files.
-- provider smoke/integration tests requiring Azure/OpenAI/Ollama-style runtime dependencies or credentials.
-- ingestion pipeline fixture/config failures.
-- LLM reranker and LLM chunk-refiner integration failures.
-- existing sparse encoder/list collection/PDF loader assertions.
+```text
+1368 passed, 32 skipped
+```
 
-Decision: do not hide these behind skips or fallback behavior in this phase. Treat full-suite stabilization as a separate quality-hardening phase.
+External Azure/OpenAI/Ollama integration tests now run only when explicit real credentials/configuration are present. Local deterministic tests do not silently fall back in production paths.
+
+## Remote Status
+
+```text
+origin/feature/agent-rag-memory-sdd
+```
+
+Latest commits:
+
+```text
+7b48095 test: 稳定离线测试套件
+d6d06df feat: 实现 Agent RAG 记忆 MCP 闭环
+```
