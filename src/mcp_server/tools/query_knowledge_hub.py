@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from mcp import types
 
+from src.core.query_engine.query_router import QueryRouteDecision, TaskQueryRouter
 from src.core.response.response_builder import ResponseBuilder, MCPToolResponse
 from src.core.settings import load_settings, resolve_path, Settings
 from src.core.trace import TraceContext, TraceCollector
@@ -109,6 +110,7 @@ class QueryKnowledgeHubTool:
         hybrid_search: Optional[HybridSearch] = None,
         reranker: Optional[CoreReranker] = None,
         response_builder: Optional[ResponseBuilder] = None,
+        query_router: Optional[TaskQueryRouter] = None,
     ) -> None:
         """Initialize QueryKnowledgeHubTool.
         
@@ -125,6 +127,7 @@ class QueryKnowledgeHubTool:
         self._reranker = reranker
         self._embedding_client = None
         self._response_builder = response_builder or ResponseBuilder()
+        self._query_router = query_router or TaskQueryRouter()
         
         # Track initialization state
         self._initialized = False
@@ -256,6 +259,18 @@ class QueryKnowledgeHubTool:
         trace.metadata["top_k"] = effective_top_k
         trace.metadata["collection"] = effective_collection
         trace.metadata["source"] = "mcp"
+        route_decision = self._query_router.route(query)
+        search_query = route_decision.rewritten_query
+        trace.metadata["query_routing"] = route_decision.to_dict()
+        trace.record_stage("query_routing", {
+            "method": "task_query_router",
+            "intent": route_decision.intent,
+            "confidence": route_decision.confidence,
+            "matched_terms": route_decision.matched_terms,
+            "preferred_doc_types": route_decision.preferred_doc_types,
+            "evidence_requirements": route_decision.evidence_requirements,
+            "rewritten": search_query != query,
+        })
 
         try:
             # Initialize components for collection
@@ -272,13 +287,13 @@ class QueryKnowledgeHubTool:
             
             # Perform hybrid search (blocking: embedding API + DB queries)
             results = await asyncio.to_thread(
-                self._perform_search, query, effective_top_k, trace,
+                self._perform_search, search_query, effective_top_k, trace, route_decision,
             )
             
             # Apply reranking if enabled (may call LLM API)
             if self.config.enable_rerank and results:
                 results = await asyncio.to_thread(
-                    self._apply_rerank, query, results, effective_top_k, trace,
+                    self._apply_rerank, search_query, results, effective_top_k, trace,
                 )
             
             # Build response
@@ -299,6 +314,7 @@ class QueryKnowledgeHubTool:
                 }
                 for r in results
             ]
+            trace.metadata["search_query"] = search_query
 
             logger.info(
                 f"query_knowledge_hub completed: {len(results)} results, "
@@ -319,6 +335,7 @@ class QueryKnowledgeHubTool:
         query: str,
         top_k: int,
         trace: Optional[Any] = None,
+        route_decision: Optional[QueryRouteDecision] = None,
     ) -> List[RetrievalResult]:
         """Perform hybrid search.
         
@@ -335,9 +352,10 @@ class QueryKnowledgeHubTool:
         
         # Use a larger initial retrieval for reranking
         initial_top_k = top_k * 2 if self.config.enable_rerank else top_k
+        hybrid_search = self._build_routed_hybrid_search(route_decision)
         
         try:
-            results = self._hybrid_search.search(
+            results = hybrid_search.search(
                 query=query,
                 top_k=initial_top_k,
                 filters=None,
@@ -348,6 +366,37 @@ class QueryKnowledgeHubTool:
         except Exception as e:
             logger.warning(f"Hybrid search failed: {e}")
             return []
+
+    def _build_routed_hybrid_search(
+        self,
+        route_decision: Optional[QueryRouteDecision],
+    ) -> Any:
+        """Return a HybridSearch instance with route-specific retrieval hints."""
+        if self._hybrid_search is None or route_decision is None:
+            return self._hybrid_search
+        if route_decision.intent == "general":
+            return self._hybrid_search
+
+        from src.core.query_engine.hybrid_search import HybridSearch, HybridSearchConfig
+
+        profile = route_decision.retrieval_profile
+        base_config = self._hybrid_search.config
+        routed_config = HybridSearchConfig(
+            dense_top_k=profile.dense_top_k,
+            sparse_top_k=profile.sparse_top_k,
+            fusion_top_k=profile.fusion_top_k,
+            enable_dense=base_config.enable_dense,
+            enable_sparse=base_config.enable_sparse,
+            parallel_retrieval=base_config.parallel_retrieval,
+            metadata_filter_post=base_config.metadata_filter_post,
+        )
+        return HybridSearch(
+            query_processor=self._hybrid_search.query_processor,
+            dense_retriever=self._hybrid_search.dense_retriever,
+            sparse_retriever=self._hybrid_search.sparse_retriever,
+            fusion=self._hybrid_search.fusion,
+            config=routed_config,
+        )
     
     def _apply_rerank(
         self,

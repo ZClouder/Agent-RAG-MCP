@@ -36,6 +36,49 @@ ValueError: Tool 'query_knowledge_hub' is already registered
 2. Decide whether v2 should add multi-agent planning, semantic memory, or dashboard trace UI.
 3. Merge `feature/agent-rag-memory-sdd` after review if no additional v1 changes are needed.
 
+## Memory V2 Progress
+
+Reviewed and implemented a business-scoped memory upgrade for the consumer-brand content operations retrieval scenario:
+
+- Added `.planning/MEMORY_SYSTEM_V2_SPEC.md`.
+- Added structured memory cards for `preference`, `workflow`, `compliance`, and `evaluation`.
+- Kept product facts, brand rules, script templates, and review documents in the RAG document store.
+- Added conservative rule-based extraction so only explicit/high-confidence operational context is written.
+- Added compact top-5 memory retrieval for Agent context injection.
+- Verified:
+
+```text
+python -m pytest tests/unit/test_memory_manager.py tests/unit/test_agent_orchestrator.py -q
+28 passed
+
+python -m pytest tests/unit/test_agent_answer_tool.py tests/unit/test_protocol_handler.py tests/unit/test_trace_service.py tests/unit/test_agent_eval_runner.py -q
+45 passed
+
+python -m pytest tests/unit -q
+1248 passed, 1 skipped
+
+python -m compileall src -q
+passed
+```
+
+## Query Router + Lightweight Business Graph Progress
+
+Implemented a dependency-free task Query Router for the consumer-brand content operations retrieval scenario:
+
+- Added `.planning/QUERY_ROUTER_KG_SPEC.md`.
+- Added deterministic `TaskQueryRouter` and lightweight business graph in `src/core/query_engine/query_router.py`.
+- Supported intents: `product_verification`, `brief_generation`, `topic_ideation`, `script_compliance`, `review_optimization`, and `general`.
+- Integrated routing into `query_knowledge_hub` before Hybrid Search.
+- Used rewritten queries for retrieval while keeping the original query in the final response.
+- Applied route-specific dense/sparse initial recall profiles without replacing existing Hybrid Search.
+- Recorded route decisions in query trace metadata and a `query_routing` trace stage.
+- Verified:
+
+```text
+python -m pytest tests/unit/test_query_router.py tests/unit/test_query_knowledge_hub_routing.py tests/unit/test_protocol_handler.py -q
+30 passed
+```
+
 ## Completed
 
 - Fixed MCP default tool duplicate registration behavior.

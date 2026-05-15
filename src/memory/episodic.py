@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from src.memory.cards import MemoryCard, MemoryCardStore, MemoryExtractor
+
 JSONDict = dict[str, Any]
 JSONList = list[Any]
 
@@ -294,8 +296,15 @@ class MemoryManager:
         self,
         db_path: str = "data/db/episodic_memory.db",
         store: EpisodicMemoryStore | None = None,
+        card_store: MemoryCardStore | None = None,
+        extractor: MemoryExtractor | None = None,
+        project_id: str | None = None,
     ) -> None:
+        self.db_path = db_path
         self.store = store or EpisodicMemoryStore(db_path=db_path)
+        self.card_store = card_store or MemoryCardStore(db_path=db_path)
+        self.extractor = extractor or MemoryExtractor()
+        self.project_id = project_id
 
     def write_turn(
         self,
@@ -347,7 +356,7 @@ class MemoryManager:
             tool_calls=tool_calls,
             citations=citations,
         )
-        return [
+        events = [
             {
                 "event_type": "episodic_memory_written",
                 "record_id": record.id,
@@ -356,6 +365,26 @@ class MemoryManager:
                 "session_id": record.session_id,
             }
         ]
+        for card in self.extractor.extract_from_turn(
+            user_id=user_id,
+            session_id=session_id,
+            query=query,
+            answer=answer,
+            evidence_id=record.id,
+            project_id=self.project_id,
+        ):
+            stored_card = self.card_store.upsert(card)
+            events.append(
+                {
+                    "event_type": "memory_card_upserted",
+                    "card_id": stored_card.id,
+                    "card_type": stored_card.card_type,
+                    "trace_id": trace_id,
+                    "user_id": stored_card.user_id,
+                    "session_id": stored_card.session_id,
+                }
+            )
+        return events
 
     def retrieve(
         self,
@@ -363,10 +392,62 @@ class MemoryManager:
         session_id: str,
         query: str,
         limit: int = 5,
-    ) -> list[MemoryRecord]:
-        """Retrieve recent episodic memories for one user/session."""
+    ) -> list[MemoryRecord | MemoryCard]:
+        """Retrieve compact Agent memory context for one user/session."""
         _require_text("query", query)
-        return self.get_history(user_id=user_id, session_id=session_id, limit=limit)
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+
+        cards = self.card_store.search(
+            user_id=user_id,
+            session_id=session_id,
+            project_id=self.project_id,
+            query=query,
+            limit=limit,
+        )
+        remaining = max(0, limit - len(cards))
+        if remaining == 0:
+            return cards
+
+        history = self.get_history(user_id=user_id, session_id=session_id)
+        recent_history = history[-remaining:]
+        return [*cards, *recent_history]
+
+    def upsert_card(self, card: MemoryCard) -> MemoryCard:
+        """Create or update one structured memory card."""
+        return self.card_store.upsert(card)
+
+    def retrieve_cards(
+        self,
+        user_id: str,
+        query: str,
+        session_id: str | None = None,
+        project_id: str | None = None,
+        limit: int = 5,
+    ) -> list[MemoryCard]:
+        """Retrieve structured memory cards for a query."""
+        return self.card_store.search(
+            user_id=user_id,
+            session_id=session_id,
+            project_id=project_id if project_id is not None else self.project_id,
+            query=query,
+            limit=limit,
+        )
+
+    def list_cards(
+        self,
+        user_id: str,
+        session_id: str | None = None,
+        project_id: str | None = None,
+        limit: int | None = None,
+    ) -> list[MemoryCard]:
+        """List active structured memory cards."""
+        return self.card_store.list(
+            user_id=user_id,
+            session_id=session_id,
+            project_id=project_id if project_id is not None else self.project_id,
+            limit=limit,
+        )
 
     def record_turn(self, *args: Any, **kwargs: Any) -> MemoryRecord:
         """Alias for ``write_turn``."""
@@ -392,3 +473,4 @@ class MemoryManager:
 
     def close(self) -> None:
         self.store.close()
+        self.card_store.close()

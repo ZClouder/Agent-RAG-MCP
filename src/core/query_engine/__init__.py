@@ -35,11 +35,23 @@ from src.core.query_engine.hybrid_search import (
     HybridSearchResult,
     create_hybrid_search,
 )
+from src.core.query_engine.query_router import (
+    BusinessGraphNode,
+    QueryRouteDecision,
+    RetrievalProfile,
+    TaskQueryRouter,
+    default_business_graph,
+)
 
 __all__ = [
+    "BusinessGraphNode",
     "QueryProcessor",
+    "QueryRouteDecision",
     "QueryProcessorConfig",
+    "RetrievalProfile",
+    "TaskQueryRouter",
     "create_query_processor",
+    "default_business_graph",
     "DEFAULT_STOPWORDS",
     "CHINESE_STOPWORDS",
     "ENGLISH_STOPWORDS",

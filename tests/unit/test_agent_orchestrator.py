@@ -91,6 +91,38 @@ async def test_agent_success_writes_memory_and_trace(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_agent_includes_structured_memory_context(tmp_path: Path) -> None:
+    memory = FakeMemoryManager()
+    memory.records = [
+        {
+            "card_type": "compliance",
+            "title": "Script compliance focus",
+            "description": "Prefer risk points, source documents, and revision advice.",
+        }
+    ]
+
+    async def query_tool(**kwargs: Any) -> types.CallToolResult:
+        return rag_result(citations=[{"id": "c1", "source": "brand-guideline.md"}])
+
+    orchestrator = AgentOrchestrator(
+        query_tool_handler=query_tool,
+        memory_manager=memory,
+        trace_collector=TraceCollector(tmp_path / "traces.jsonl"),
+    )
+
+    result = await orchestrator.answer(
+        query="检查这段脚本是否合规",
+        user_id="u1",
+        session_id="s1",
+        collection="brand-docs",
+        top_k=3,
+    )
+
+    assert "Relevant memory:" in result.answer
+    assert "[compliance] Script compliance focus" in result.answer
+
+
+@pytest.mark.asyncio
 async def test_agent_fails_on_empty_query(tmp_path: Path) -> None:
     async def query_tool(**kwargs: Any) -> types.CallToolResult:
         raise AssertionError("tool should not be called")

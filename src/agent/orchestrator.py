@@ -235,14 +235,37 @@ class AgentOrchestrator:
         return event_dicts
 
     def _compose_answer(self, state: AgentState, retrieval_text: str) -> str:
-        memory_note = ""
-        if state.memory_contexts:
-            memory_note = f"\n\nMemory contexts used: {len(state.memory_contexts)}"
+        memory_note = self._format_memory_contexts(state.memory_contexts)
         return (
             f"Answer grounded in {len(state.citations)} citations for query: {state.query}\n\n"
             f"{retrieval_text.strip()}"
             f"{memory_note}"
         )
+
+    @staticmethod
+    def _format_memory_contexts(memory_contexts: List[Dict[str, Any]]) -> str:
+        if not memory_contexts:
+            return ""
+
+        lines = []
+        for item in memory_contexts[:5]:
+            card_type = item.get("card_type")
+            if card_type:
+                title = str(item.get("title", "")).strip()
+                description = str(item.get("description", "")).strip()
+                if title or description:
+                    lines.append(f"- [{card_type}] {title}: {description}".strip())
+                continue
+
+            query = str(item.get("query", "")).strip()
+            answer = str(item.get("answer", "")).strip()
+            if query:
+                summary = answer[:120].replace("\n", " ")
+                lines.append(f"- [episodic] prior query: {query}; answer: {summary}")
+
+        if not lines:
+            return f"\n\nMemory contexts used: {len(memory_contexts)}"
+        return "\n\nRelevant memory:\n" + "\n".join(lines)
 
     @staticmethod
     def _validate_inputs(
